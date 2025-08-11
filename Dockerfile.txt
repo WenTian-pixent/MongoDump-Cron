@@ -1,0 +1,22 @@
+FROM ubuntu:latest
+WORKDIR /
+
+RUN echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list && \
+    apt update && \
+    apt install -y gnupg curl cron vim mongodb-org && \
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash && \
+    mkdir /cron-jobs
+
+COPY ./discordjs /discordjs
+COPY ./cron.sh /
+COPY ./run-cron /cron-jobs
+
+RUN chmod 744 /cron.sh && \
+    chmod 744 /discordjs/index.js && \
+    crontab /cron-jobs
+
+RUN bash -c "nvm install --lts"
+
+EXPOSE 6500
+
+CMD ["/bin/bash"]

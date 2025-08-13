@@ -6,7 +6,7 @@ folder="/mongodump-output-query"
 fileName="$timeStamp.log"
 mkdir -p "$folder"
 mongodump --uri="mongodb://host.docker.internal:27017" --db=playground --collection=game_rounds --query="{ \"endTime\": { \"\$gt\": { \"\$date\": \"$hoursBefore\" } , \"\$lte\": { \"\$date\": \"$timeStamp\" } } }" --out=/var/backups > "$folder/$fileName" 2>&1
-echo $(date --date="$cronTimeStamp" +"%Y-%m-%d %H:%M:%S") > "mongodump-last-run.txt"
+echo $(date --date="$cronTimeStamp" +"%Y-%m-%d %H:%M:%S") > "/mongodump-last-run.txt"
 cd /discord-bot
 node index.js "$folder/$fileName"
 

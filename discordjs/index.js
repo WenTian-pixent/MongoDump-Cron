@@ -48,7 +48,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   let message = "";
   let errorMessage = "";
   for (const fileObj of fileContents) {
-    if (fileObj.fileContent && !fileObj.fileContent.includes("error")) {
+    if (fileObj.fileContent && fileObj.fileContent.includes("done dumping")) {
       message += `:white_check_mark: ## MongoDump ran successfully!\n**Filename:** ${
         fileObj.fileName || "Invalid args file name"
       }\n**Content:** ${

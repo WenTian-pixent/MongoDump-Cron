@@ -1,5 +1,5 @@
 #!/bin/bash
-dumpLastRun=$(</mongodump-last-run.txt)
+dumpLastRun=$(tail -n 1 "/mongodump-last-run.txt")
 if ! date --date="$dumpLastRun" >/dev/null 2>&1; then
     echo "Invalid date: $dumpLastRun"
     exit 1
@@ -25,10 +25,25 @@ for ((i=1; i<=numberOfDays; i++)); do
     endOfDate=$(date --date="$dateToDump" +"%Y-%m-%dT23:59:59.999Z")
     fileName="$dateToDump.log"
 
-    mongodump --uri="mongodb://host.docker.internal:27017" --db=playground --collection=game_rounds --query="{ \"endTime\": { \"\$gt\": { \"\$date\": \"$startOfDate\" } , \"\$lte\": { \"\$date\": \"$endOfDate\" } } }" --out="/var/backups/$fileName" > "$folder/$fileName" 2>&1
+    dumpFolderPath="/var/backups/$fileName"
+    dumpLogFilePath="$folder/$fileName"
+    mongodump --uri="mongodb://host.docker.internal:27017" --db=playground --collection=game_rounds --query="{ \"endTime\": { \"\$gt\": { \"\$date\": \"$startOfDate\" } , \"\$lte\": { \"\$date\": \"$endOfDate\" } } }" --out="$dumpFolderPath" > "$dumpLogFilePath" 2>&1
 
-    args+=("$folder/$fileName")
+    if grep -qi "done dumping" "$dumpLogFilePath"; then
+        # Run S3
+        # If uploaded successfully, then delete the folder
+        rm -r "$dumpFolderPath"
+        # Else
+        echo "Upload failed for $dumpFolderPath. Keeping the dump." >> "$dumpLogFilePath"
+    else
+        echo "Dump failed for $dumpFolderPath." >> "$dumpLogFilePath"
+    fi
+
+    args+=("$dumpLogFilePath")
 done
 
 cd /discord-bot
+// When running from cron, replace "node" with the full path to the node executable
+// Perform "which node" in bash to find the path
+// ex. /root/.nvm/versions/node/v22.18.0/bin/node
 node index.js ${args[@]}

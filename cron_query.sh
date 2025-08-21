@@ -29,9 +29,9 @@ if [ "$line_count" -gt 20 ]; then
 fi
 
 cd /discord-bot
-// When running from cron, replace "node" with the full path to the node executable
-// Perform "which node" in bash to find the path
-// ex. /root/.nvm/versions/node/v22.18.0/bin/node
+# When running from cron, replace "node" with the full path to the node executable
+# Perform "which node" in bash to find the path
+# ex. /root/.nvm/versions/node/v22.18.0/bin/node
 node index.js "$dumpLogFilePath"
 
 

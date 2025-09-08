@@ -42,10 +42,46 @@ for ((i=1; i<=numberOfDays; i++)); do
     args+=("$dumpLogFilePath")
 done
 
-./discord_curl.sh "${args[@]}"
+# Discord Notification
 
-# cd /discord-bot
-# When running from cron, replace "node" with the full path to the node executable
-# Perform "which node" in bash to find the path
-# ex. /root/.nvm/versions/node/v22.18.0/bin/node
-# node index.js ${args[@]}
+message=""
+errorMessage=""
+
+for file in "${args[@]}"; do
+  if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+    echo "Error reading file: $file"
+    exit 1
+  fi
+
+  fileContent=$(<"$file")
+  # Create message without \n & empty spaces/tabs, jq will format it correctly
+  if [[ "$fileContent" == *"done dumping"* ]]; then
+    message+=":white_check_mark: ## MongoDump ran successfully!
+**Filename:** $file
+**Content:**
+\`\`\`$fileContent\`\`\`
+"
+  else
+    errorMessage+=":x: ## MongoDump ran failed!
+**Filename:** $file
+**Content:**
+\`\`\`$fileContent\`\`\`
+"
+  fi
+done
+
+call_discord_webhook() {
+    payload=$(jq -n --arg content "$1" '{ content: $content }')
+    curl -H "Content-Type: application/json" \
+     -X POST \
+     -d "$payload" \
+     "$2"
+}
+
+if [ -n "$message" ]; then
+  call_discord_webhook "$message" "$DISCORD_CHANNEL_SUCCESS"
+fi
+
+if [ -n "$errorMessage" ]; then
+  call_discord_webhook "$errorMessage" "$DISCORD_CHANNEL_FAILED"
+fi

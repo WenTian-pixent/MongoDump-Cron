@@ -28,20 +28,45 @@ if [ "$line_count" -gt 20 ]; then
   tail -n 20 "$lastRunFile" > "$lastRunFile.tmp" && mv "$lastRunFile.tmp" "$lastRunFile"
 fi
 
-./discord_curl.sh "$dumpLogFilePath"
+# Discord Notification
 
-# cd /discord-bot
-# When running from cron, replace "node" with the full path to the node executable
-# Perform "which node" in bash to find the path
-# ex. /root/.nvm/versions/node/v22.18.0/bin/node
-# node index.js "$dumpLogFilePath"
+message=""
+errorMessage=""
 
+if [ ! -f "$dumpLogFilePath" ] || [ ! -r "$dumpLogFilePath" ]; then
+  echo "Error reading file: $dumpLogFilePath"
+  exit 1
+fi
 
-# echo $(date -u '+%Y-%m-%dT%H:%M:%S.000Z')
-# cronTimeStamp=$(date --date="2025-09-11 12:20:00") && echo $(date --date="$cronTimeStamp - 23 hours" +"%Y-%m-%dT%H:%M:%S.000Z")
-# cronTimeStamp=$(date "+%Y-%m-%dT%H:%M:%S.%3NZ") && timeStamp=$(date --date="$cronTimeStamp" +"%Y-%m-%dT%H:%M:%S.%3NZ") && hoursBefore="$(date --date="$cronTimeStamp - 6 hours" +"%Y-%m-%dT%H:%M:%S.%3NZ")" && echo "{ \"endTime\": { \"\$gt\": $hoursBefore, \"\$lte\": $timeStamp } }"
-# echo $(date -u -d $(date -d "2025-08-11 12:03:57.675"))
-# echo $(date "+%Y-%m-%d %H:%M:%S.%3N")
-# echo $(date --date="$date -6 days" "+%Y-%m-%d %H:%M:%S")
-# cronTimeStamp=$(date --date="$1") && 
-# chmod 744 /cron_query.sh && /cron_query.sh "2025-08-11 01:00:00"
+fileContent=$(<"$dumpLogFilePath")
+
+# Create message without \n & empty spaces/tabs, jq will format it correctly
+if [[ "$fileContent" == *"done dumping"* ]]; then
+  message+=":white_check_mark: ## MongoDump ran successfully!
+**Filename:** $dumpLogFilePath
+**Content:**
+\`\`\`$fileContent\`\`\`
+"
+else
+  errorMessage+=":x: ## MongoDump ran failed!
+**Filename:** $dumpLogFilePath
+**Content:**
+\`\`\`$fileContent\`\`\`
+"
+fi
+
+call_discord_webhook() {
+    payload=$(jq -n --arg content "$1" '{ content: $content }')
+    curl -H "Content-Type: application/json" \
+     -X POST \
+     -d "$payload" \
+     "$2"
+}
+
+if [ -n "$message" ]; then
+  call_discord_webhook "$message" "$DISCORD_CHANNEL_SUCCESS"
+fi
+
+if [ -n "$errorMessage" ]; then
+  call_discord_webhook "$errorMessage" "$DISCORD_CHANNEL_FAILED"
+fi

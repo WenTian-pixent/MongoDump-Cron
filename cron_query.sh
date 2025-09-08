@@ -9,7 +9,7 @@ mkdir -p "$folder"
 
 dumpFolderPath="/var/backups/$fileName"
 dumpLogFilePath="$folder/$fileName"
-mongodump --uri="mongodb://host.docker.internal:27017" --db=playground --collection=game_rounds --query="{ \"endTime\": { \"\$gt\": { \"\$date\": \"$hoursBefore\" } , \"\$lte\": { \"\$date\": \"$timeStamp\" } } }" --out="$dumpFolderPath" > "$dumpLogFilePath" 2>&1
+mongodump --uri="${MONGOURL_ENV}" --db=playground --collection=game_rounds --query="{ \"endTime\": { \"\$gt\": { \"\$date\": \"$hoursBefore\" } , \"\$lte\": { \"\$date\": \"$timeStamp\" } } }" --out="$dumpFolderPath" > "$dumpLogFilePath" 2>&1
 
 if grep -qi "done dumping" "$dumpLogFilePath"; then
     # Run S3
@@ -28,11 +28,13 @@ if [ "$line_count" -gt 20 ]; then
   tail -n 20 "$lastRunFile" > "$lastRunFile.tmp" && mv "$lastRunFile.tmp" "$lastRunFile"
 fi
 
-cd /discord-bot
+./discord_curl.sh "$dumpLogFilePath"
+
+# cd /discord-bot
 # When running from cron, replace "node" with the full path to the node executable
 # Perform "which node" in bash to find the path
 # ex. /root/.nvm/versions/node/v22.18.0/bin/node
-node index.js "$dumpLogFilePath"
+# node index.js "$dumpLogFilePath"
 
 
 # echo $(date -u '+%Y-%m-%dT%H:%M:%S.000Z')

@@ -27,7 +27,7 @@ for ((i=1; i<=numberOfDays; i++)); do
 
     dumpFolderPath="/var/backups/$fileName"
     dumpLogFilePath="$folder/$fileName"
-    mongodump --uri="mongodb://host.docker.internal:27017" --db=playground --collection=game_rounds --query="{ \"endTime\": { \"\$gt\": { \"\$date\": \"$startOfDate\" } , \"\$lte\": { \"\$date\": \"$endOfDate\" } } }" --out="$dumpFolderPath" > "$dumpLogFilePath" 2>&1
+    mongodump --uri="${MONGOURL_ENV}" --db=playground --collection=game_rounds --query="{ \"endTime\": { \"\$gt\": { \"\$date\": \"$startOfDate\" } , \"\$lte\": { \"\$date\": \"$endOfDate\" } } }" --out="$dumpFolderPath" > "$dumpLogFilePath" 2>&1
 
     if grep -qi "done dumping" "$dumpLogFilePath"; then
         # Run S3
@@ -42,8 +42,10 @@ for ((i=1; i<=numberOfDays; i++)); do
     args+=("$dumpLogFilePath")
 done
 
-cd /discord-bot
+./discord_curl.sh "${args[@]}"
+
+# cd /discord-bot
 # When running from cron, replace "node" with the full path to the node executable
 # Perform "which node" in bash to find the path
 # ex. /root/.nvm/versions/node/v22.18.0/bin/node
-node index.js ${args[@]}
+# node index.js ${args[@]}

@@ -1,1 +1,1 @@
-* * * * * /cron.sh
+* * * * * . ~/.bashrc; /cron.sh

@@ -7,14 +7,17 @@ for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL_SUCCESS" "DISCORD_CHANNEL_ABC"; do
     exit 1
 done
 
+# Perform mongodump for the last 6 hours
 cronTimeStamp=$(date)
 timeStamp=$(date --date="$cronTimeStamp" +"%Y-%m-%dT%H:%M:00.000Z")
 hoursBefore="$(date --date="$cronTimeStamp - 6 hours" +"%Y-%m-%dT%H:%M:00.000Z")"
 
+# Create output directory
 folder="/mongodump-output-query"
 fileName="$timeStamp.log"
 mkdir -p "$folder"
 
+# Perform mongodump
 dumpFolderPath="/var/backups/$fileName"
 dumpLogFilePath="$folder/$fileName"
 mongodump --uri="${MONGOURL_ENV}" --db=playground --collection=game_rounds --query="{ \"endTime\": { \"\$gt\": { \"\$date\": \"$hoursBefore\" } , \"\$lte\": { \"\$date\": \"$timeStamp\" } } }" --out="$dumpFolderPath" > "$dumpLogFilePath" 2>&1
@@ -29,9 +32,11 @@ else
     echo "Dump failed for $dumpFolderPath." >> "$dumpLogFilePath"
 fi
 
+# Update last run file
 lastRunFile="/mongodump-last-run.txt"
 echo $(date --date="$cronTimeStamp" +"%Y-%m-%d %H:%M:00") >> "$lastRunFile"
 line_count=$(wc -l < "$lastRunFile")
+# Keep only the last 20 lines
 if [ "$line_count" -gt 20 ]; then
   tail -n 20 "$lastRunFile" > "$lastRunFile.tmp" && mv "$lastRunFile.tmp" "$lastRunFile"
 fi
@@ -41,6 +46,7 @@ fi
 message=""
 errorMessage=""
 
+# Read the log file content
 if [ ! -f "$dumpLogFilePath" ] || [ ! -r "$dumpLogFilePath" ]; then
   echo "Error reading file: $dumpLogFilePath"
   exit 1

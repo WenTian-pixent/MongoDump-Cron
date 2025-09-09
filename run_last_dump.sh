@@ -7,15 +7,18 @@ for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL_SUCCESS" "DISCORD_CHANNEL_ABC"; do
     exit 1
 done
 
+# Read the last run date from the file
 dumpLastRun=$(tail -n 1 "/mongodump-last-run.txt")
 if ! date --date="$dumpLastRun" >/dev/null 2>&1; then
     echo "Invalid date: $dumpLastRun"
     exit 1
 fi
 
+# Create output directory
 folder="/mongodump-output-last-run"
 mkdir -p "$folder"
 
+# Calculate the number of days between the last run date and today
 dateDumpLastRun=$(date --date="$dumpLastRun")
 todayDate=$(date)
 
@@ -27,6 +30,7 @@ if [ $numberOfDays -le 0 ]; then
 fi
 
 args=()
+# Loop through each day and perform mongodump
 for ((i=1; i<=numberOfDays; i++)); do
     dateToDump=$(date --date="$dateDumpLastRun + $i days" +"%Y-%m-%dT%H:%M:%S.%3NZ")
     startOfDate=$(date --date="$dateToDump" +"%Y-%m-%dT00:00:00.000Z")
@@ -55,7 +59,9 @@ done
 message=""
 errorMessage=""
 
+# Loop through all log files and create messages
 for file in "${args[@]}"; do
+  # Read the log file content
   if [ ! -f "$file" ] || [ ! -r "$file" ]; then
     echo "Error reading file: $file"
     exit 1

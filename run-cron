@@ -1,1 +1,4 @@
-* * * * * . ~/.bashrc; /cron.sh
+MONGOURL_ENV="mongodb://host.docker.internal:27017"
+DISCORD_CHANNEL_SUCCESS="https://discord.com/api/webhooks/1414453533733814314/xnOabt6EViC_Kq2j0Cp9CqVELcS-KPEFpKh2dNrjYBRT-L5vV883WsrVqep3iEA9f23U"
+DISCORD_CHANNEL_FAILED="https://discord.com/api/webhooks/1414469964634525747/_1ZE_58m3omLE07WcLuCAP_QkEEx9emgmpsGE6pMaqaV9eUx8GUPiEY_d_8j6mARTGMJ"
+* * * * * /cron.sh

@@ -1,4 +1,12 @@
 #!/bin/bash
+
+# Check if required environment variables are set
+for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL_SUCCESS" "DISCORD_CHANNEL_ABC"; do
+  if [ -z "${!envVar}" ]; then
+    echo "Error: $envVar is not set or is empty."
+    exit 1
+done
+
 dumpLastRun=$(tail -n 1 "/mongodump-last-run.txt")
 if ! date --date="$dumpLastRun" >/dev/null 2>&1; then
     echo "Invalid date: $dumpLastRun"

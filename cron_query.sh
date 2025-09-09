@@ -1,4 +1,12 @@
 #!/bin/bash
+
+# Check if required environment variables are set
+for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL_SUCCESS" "DISCORD_CHANNEL_ABC"; do
+  if [ -z "${!envVar}" ]; then
+    echo "Error: $envVar is not set or is empty."
+    exit 1
+done
+
 cronTimeStamp=$(date)
 timeStamp=$(date --date="$cronTimeStamp" +"%Y-%m-%dT%H:%M:00.000Z")
 hoursBefore="$(date --date="$cronTimeStamp - 6 hours" +"%Y-%m-%dT%H:%M:00.000Z")"

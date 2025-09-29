@@ -61,7 +61,7 @@ echo "   To:   $queryTimeStamp"
 basePath="/data/Microslot"
 dumpFolderPath="$basePath/$dirTimeStamp"
 dumpLogFilePath="$basePath/$dirTimeStamp.log"
-lastRunFile="$basePath/mongodump-last-run.txt"
+failedRunFile="$basePath/mongodump-failed-run.txt"
 queryFile="$basePath/query.json"
 
 mkdir -p "$dumpFolderPath"
@@ -97,9 +97,20 @@ if mongodump --uri="${MONGOURL_ENV}" \
     if grep -qi "done dumping" "$dumpLogFilePath"; then
         dump_success=true
         echo "✅ Dump completed successfully at $dumpFolderPath"
-        echo "$cronTimeStamp" > "$lastRunFile"
     else
         echo "❌ Dump failed for $dumpFolderPath." | tee -a "$dumpLogFilePath"
+        echo "$cronTimeStamp" >> "$failedRunFile"
+        # Trim failedRunFile to keep only the last 20 lines if necessary
+        line_count=$(wc -l < "$failedRunFile")
+        if [ "$line_count" -gt 20 ]; then
+            # Use a temporary file and check for errors
+            tmp_file="${failedRunFile}.tmp"
+            if tail -n 20 "$failedRunFile" > "$tmp_file"; then
+                mv "$tmp_file" "$failedRunFile"
+            else
+                echo "❌ Error trimming $failedRunFile"
+            fi
+        fi
     fi
 else
     echo "❌ mongodump command failed!" | tee -a "$dumpLogFilePath"

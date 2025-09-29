@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
 # =========================
 #  Load environment variables
@@ -47,14 +47,8 @@ fi
 #  Paths
 # =========================
 basePath="/data/Microslot"
-dumpFolderPath="$basePath/$dirTimeStamp"
-dumpLogFilePath="$basePath/$dirTimeStamp.log"
 failedRunFile="$basePath/mongodump-failed-run.txt"
 queryFile="$basePath/query.json"
-
-mkdir -p "$dumpFolderPath"
-mkdir -p "$basePath"
-echo "📂 Folders created: $dumpFolderPath"
 
 # =========================
 #  Discord Webhooks
@@ -103,38 +97,53 @@ send_discord_notification() {
 # =========================
 #  Extract failed dump dates
 # =========================
-mapfile -t date_lines < "$failedRunFile"
+mapfile -t dateLines < "$failedRunFile"
 
 validDates=()
-for date_line in "${date_lines[@]}"; do
-    if date -d "$date_line" >/dev/null 2>&1; then
-    validDates+=("$date_line")
+for dateLine in "${dateLines[@]}"; do
+    if date -d "$dateLine" >/dev/null 2>&1; then
+    validDates+=("$dateLine")
     else
-        echo "❌ Invalid date: $date_line"
+        echo "❌ Invalid date: $dateLine"
     fi
 done
 
 if [ "${#validDates[@]}" -eq 0 ]; then
     echo "❌ No valid dates found. Exiting process."
     exit 1
+else
+    echo "✅ Failed dates found:"
+    for validDate in "${validDates[@]}"; do
+        echo "$validDate"
+    done
 fi
 
 # =========================
 #  Dump & upload each valid date
 # =========================
-for date_line in "${valid_dates[@]}"; do
-    echo "🔍 Processing date: $date_line"
+for dateLine in "${validDates[@]}"; do
+    echo "🔍 Processing date: $dateLine"
     # =========================
     #  Timestamps (UTC)
     # =========================
-    cronTimeStamp=$(date -u -d "$date_line")
-    queryTimeStamp=$(date -u -d "$date_line" +"%Y-%m-%dT%H:%M:00.000Z")
+    cronTimeStamp=$(date -u -d "$dateLine")
+    queryTimeStamp=$(date -u -d "$dateLine" +"%Y-%m-%dT%H:%M:00.000Z")
     hoursBefore=$(date -u -d "$cronTimeStamp - 6 hours" +"%Y-%m-%dT%H:%M:00.000Z")
-    dirTimeStamp=$(date -u +"%Y-%m-%d_%H-%M-%S")
+    dirTimeStamp=$(date -u -d "$dateLine" +"%Y-%m-%d_%H-%M-%S")
 
     echo "📅 UTC Timestamps generated"
     echo "   From: $hoursBefore"
     echo "   To:   $queryTimeStamp"
+
+    # =========================
+    #  Paths
+    # =========================
+    dumpFolderPath="$basePath/$dirTimeStamp"
+    dumpLogFilePath="$basePath/$dirTimeStamp.log"
+    
+    mkdir -p "$dumpFolderPath"
+    mkdir -p "$basePath"
+    echo "📂 Folders created: $dumpFolderPath"
 
     # =========================
     #  Create query.json file
@@ -166,7 +175,13 @@ EOF
             dump_success=true
             echo "✅ Dump completed successfully at $dumpFolderPath"
             # Remove the processed date from the file
-            grep -vxF "$date_line" "$failedRunFile" > "${failedRunFile}.tmp" && mv "${failedRunFile}.tmp" "$failedRunFile"
+            grep -vxF "$dateLine" "$failedRunFile" > "${failedRunFile}.tmp"
+            if [ ! -s "${failedRunFile}.tmp" ]; then
+                > "$failedRunFile"
+                rm "${failedRunFile}.tmp"
+            else
+                mv "${failedRunFile}.tmp" "$failedRunFile"
+            fi
         else
             echo "❌ Dump failed for $dumpFolderPath." | tee -a "$dumpLogFilePath"
         fi

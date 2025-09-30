@@ -113,8 +113,8 @@ re_dump_failed_cron_runs() {
   done
   
   if [ "${#validDates[@]}" -eq 0 ]; then
-      echo "❌ No valid dates found. Exiting process."
-      exit 1
+      echo "❌ No valid failed dates found. Skipping re_dump_failed_cron_runs."
+      return
   else
       echo "✅ Failed dates found:"
       for validDate in "${validDates[@]}"; do

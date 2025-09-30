@@ -141,14 +141,7 @@ re_dump_failed_cron_runs() {
       mkdir -p "$basePath"
       echo "📂 Folders created: $dumpFolderPath"
   
-      cat > "$queryFile" <<EOF
-      {
-        "endTime": {
-          "\$gt": { "\$date": "$hoursBefore" },
-          "\$lte": { "\$date": "$queryTimeStamp" }
-        }
-      }
-EOF
+      create_query_file "$hoursBefore" "$queryTimeStamp"
 
       local dump_success=false
       local upload_success=false

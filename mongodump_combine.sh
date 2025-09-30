@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
 # =========================
 #  Load environment variables
@@ -55,12 +55,14 @@ s3Bucket="s3://msdev-mongodump"
 # Initialize functions
 # =========================
 create_query_file() {
+  local hoursBefore="$1"
+  local queryTimeStamp="$2"
   #  Create query.json file
   cat > "$queryFile" <<EOF
   {
     "endTime": {
-      "\$gt": { "\$date": "$1" },
-      "\$lte": { "\$date": "$2" }
+      "\$gt": { "\$date": "$hoursBefore" },
+      "\$lte": { "\$date": "$queryTimeStamp" }
     }
   }
 EOF
@@ -69,6 +71,7 @@ EOF
 mongodump_query() {
   local queryFile="$1"
   local dumpFolderPath="$2"
+  local dumpLogFilePath="$3"
   mongodump --uri="${MONGOURL_ENV}" \
           --collection=game_rounds \
           --queryFile="$queryFile" \
@@ -121,9 +124,7 @@ re_dump_failed_cron_runs() {
 
   for dateLine in "${validDates[@]}"; do
       echo "🔍 Processing date: $dateLine"
-      # =========================
-      #  Timestamps (UTC)
-      # =========================
+ 
       local cronTimeStamp=$(date -u -d "$dateLine")
       local queryTimeStamp=$(date -u -d "$dateLine" +"%Y-%m-%dT%H:%M:00.000Z")
       local hoursBefore=$(date -u -d "$cronTimeStamp - 6 hours" +"%Y-%m-%dT%H:%M:00.000Z")
@@ -133,9 +134,6 @@ re_dump_failed_cron_runs() {
       echo "   From: $hoursBefore"
       echo "   To:   $queryTimeStamp"
   
-      # =========================
-      #  Paths
-      # =========================
       local dumpFolderPath="$basePath/$dirTimeStamp"
       local dumpLogFilePath="$basePath/$dirTimeStamp.log"
       
@@ -143,9 +141,6 @@ re_dump_failed_cron_runs() {
       mkdir -p "$basePath"
       echo "📂 Folders created: $dumpFolderPath"
   
-      # =========================
-      #  Create query.json file
-      # =========================
       cat > "$queryFile" <<EOF
       {
         "endTime": {
@@ -158,7 +153,7 @@ EOF
       local dump_success=false
       local upload_success=false
 
-      if mongodump_query "$queryFile" "$dumpFolderPath"; then
+      if mongodump_query "$queryFile" "$dumpFolderPath" "$dumpLogFilePath"; then
           if grep -qi "done dumping" "$dumpLogFilePath"; then
               dump_success=true
               echo "✅ Dump completed successfully at $dumpFolderPath"
@@ -280,7 +275,7 @@ dump_success=false
 upload_success=false
 
 echo "🔍 Running mongodump for $dbName.game_rounds ..."
-if mongodump_query "$queryFile" "$dumpFolderPath" then
+if mongodump_query "$queryFile" "$dumpFolderPath" "$dumpLogFilePath"; then
     if grep -qi "done dumping" "$dumpLogFilePath"; then
         dump_success=true
         echo "✅ Dump completed successfully at $dumpFolderPath"

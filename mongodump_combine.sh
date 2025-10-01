@@ -102,6 +102,9 @@ upload_s3_bucket() {
 }
 
 re_dump_failed_cron_runs() {
+  if [ ! -f "$failedRunFile" ]; then
+      return
+  fi
   mapfile -t dateLines < "$failedRunFile"
 
   local validDates=()

@@ -51,6 +51,8 @@ failedRunFile="$basePath/mongodump-failed-run.txt"
 queryFile="$basePath/query.json"
 s3Bucket="s3://mgcdev-mongodump"
 
+mkdir -p "$basePath"
+
 # =========================
 # Initialize functions
 # =========================
@@ -137,7 +139,7 @@ re_dump_failed_cron_runs() {
       local dumpLogFilePath="$basePath/$dirTimeStamp.log"
       
       mkdir -p "$dumpFolderPath"
-      mkdir -p "$basePath"
+
       echo "📂 Folders created: $dumpFolderPath"
   
       create_query_file "$dateFrom" "$dateTo"
@@ -256,6 +258,8 @@ dumpLogFilePath="$basePath/$dirTimeStamp.log"
 echo "📅 UTC Timestamps generated"
 echo "   From: $dateFrom"
 echo "   To:   $dateTo"
+
+mkdir -p "$dumpFolderPath"
 
 create_query_file "$dateFrom" "$dateTo"
 

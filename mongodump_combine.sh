@@ -4,7 +4,7 @@ set -uo pipefail
 # =========================
 #  Load environment variables
 # =========================
-ENV_FILE="/home/ubuntu/msdev-mongodump/MongoDump-Cron/ms-cron.env"
+ENV_FILE="/home/ubuntu/mgcdev-mongodump/MongoDump-Cron/mgc-cron.env"
 if [ -f "$ENV_FILE" ]; then
   set -a
   source "$ENV_FILE"
@@ -39,30 +39,30 @@ dbName=$(echo "$MONGOURL_ENV" | sed -n 's#.*/\([^?]*\).*#\1#p')
 if [ -n "$dbName" ]; then
   echo "📦 Target database from URI: $dbName"
 else
-  dbName="demorgs"
+  dbName="aggregator"
   echo "📦 Defaulting to database: $dbName"
 fi
 
 # =========================
 #  Paths
 # =========================
-basePath="/data/Microslot"
+basePath="/data/mgc"
 failedRunFile="$basePath/mongodump-failed-run.txt"
 queryFile="$basePath/query.json"
-s3Bucket="s3://msdev-mongodump"
+s3Bucket="s3://mgcdev-mongodump"
 
 # =========================
 # Initialize functions
 # =========================
 create_query_file() {
-  local hoursBefore="$1"
-  local queryTimeStamp="$2"
+  local dateFrom="$1"
+  local dateTo="$2"
   #  Create query.json file
   cat > "$queryFile" <<EOF
   {
     "endTime": {
-      "\$gt": { "\$date": "$hoursBefore" },
-      "\$lte": { "\$date": "$queryTimeStamp" }
+      "\$gte": { "\$date": "$dateFrom" },
+      "\$lt": { "\$date": "$dateTo" }
     }
   }
 EOF
@@ -85,9 +85,9 @@ upload_s3_bucket() {
   local dirTimeStamp="$3"
 
   if [ "$dump_success" = true ]; then
-      echo "📤 Uploading dump to $s3Bucket/Microslot/$dirTimeStamp/ ..." >&2
-      if aws s3 cp "$dumpFolderPath" "$s3Bucket/Microslot/$dirTimeStamp/" --recursive; then
-          echo "✅ Successfully uploaded to $s3Bucket/Microslot/$dirTimeStamp/" >&2
+      echo "📤 Uploading dump to $s3Bucket/mgc/$dirTimeStamp/ ..." >&2
+      if aws s3 cp "$dumpFolderPath" "$s3Bucket/mgc/$dirTimeStamp/" --recursive; then
+          echo "✅ Successfully uploaded to $s3Bucket/mgc/$dirTimeStamp/" >&2
           echo "🧹 Removing local dump directory: $dumpFolderPath" >&2
           rm -rf "$dumpFolderPath"
           echo true # Function return upload success to variable
@@ -124,14 +124,14 @@ re_dump_failed_cron_runs() {
   for dateLine in "${validDates[@]}"; do
       echo "🔍 Processing failed date: $dateLine"
  
-      local cronTimeStamp=$(date -u -d "$dateLine")
-      local queryTimeStamp=$(date -u -d "$dateLine" +"%Y-%m-%dT%H:%M:00.000Z")
-      local hoursBefore=$(date -u -d "$cronTimeStamp - 6 hours" +"%Y-%m-%dT%H:%M:00.000Z")
-      local dirTimeStamp=$(date -u -d "$dateLine" +"%Y-%m-%d_%H-%M-%S")
+      local failedDate=$(date -u -d "$dateLine")
+      local dateFrom=$(date -u -d "$failedDate" +"%Y-%m-%dT00:00:00Z")
+      local dateTo=$(date -u -d "$failedDate + 1 day" +"%Y-%m-%dT00:00:00Z")
+      local dirTimeStamp="${dateFrom}_${dateTo}"
   
       echo "📅 UTC Timestamps generated"
-      echo "   From: $hoursBefore"
-      echo "   To:   $queryTimeStamp"
+      echo "   From: $dateFrom"
+      echo "   To:   $dateTo"
   
       local dumpFolderPath="$basePath/$dirTimeStamp"
       local dumpLogFilePath="$basePath/$dirTimeStamp.log"
@@ -140,7 +140,7 @@ re_dump_failed_cron_runs() {
       mkdir -p "$basePath"
       echo "📂 Folders created: $dumpFolderPath"
   
-      create_query_file "$hoursBefore" "$queryTimeStamp"
+      create_query_file "$dateFrom" "$dateTo"
 
       local dump_success=false
       local upload_success=false
@@ -166,7 +166,7 @@ re_dump_failed_cron_runs() {
 
       upload_success=$(upload_s3_bucket "$dump_success" "$dumpFolderPath" "$dirTimeStamp")
 
-      check_dump_upload_success "$dump_success" "$upload_success" "$dumpLogFilePath" "$cronTimeStamp" "$dirTimeStamp"
+      check_dump_upload_success "$dump_success" "$upload_success" "$dumpLogFilePath" "$dirTimeStamp"
   done
 }
 
@@ -218,8 +218,7 @@ check_dump_upload_success() {
     local dump_success="$1"
     local upload_success="$2"
     local dumpLogFilePath="$3"
-    local cronTimeStamp="$4"
-    local dirTimeStamp="$5"
+    local dirTimeStamp="$4"
     # =========================
     #  Notify on Success/Failure
     # =========================
@@ -231,7 +230,7 @@ check_dump_upload_success() {
     📂 **Collection:** game_rounds
     📊 **Documents:** $docCount
     ⏱ **Dump Time (UTC):** $cronTimeStamp
-    ☁️ **S3 Path:** $s3Bucket/Microslot/$dirTimeStamp/"
+    ☁️ **S3 Path:** $s3Bucket/mgc/$dirTimeStamp/"
     
         send_discord_notification "$DISCORD_CHANNEL_SUCCESS" "✅ SUCCESS" "$successMsg"
     else
@@ -248,17 +247,17 @@ check_dump_upload_success() {
 #  Today's Timestamps (UTC)
 # =========================
 cronTimeStamp=$(date -u)
-queryTimeStamp=$(date -u -d "$cronTimeStamp" +"%Y-%m-%dT%H:%M:00.000Z")
-hoursBefore=$(date -u -d "$cronTimeStamp - 6 hours" +"%Y-%m-%dT%H:%M:00.000Z")
-dirTimeStamp=$(date -u -d "$cronTimeStamp" +"%Y-%m-%d_%H-%M-%S")
+dateFrom=$(date -u -d "$cronTimeStamp - 20 days" +"%Y-%m-%dT00:00:00Z")
+dateTo=$(date -u -d "$cronTimeStamp - 19 days" +"%Y-%m-%dT00:00:00Z")
+dirTimeStamp="${dateFrom}_${dateTo}"
 dumpFolderPath="$basePath/$dirTimeStamp"
 dumpLogFilePath="$basePath/$dirTimeStamp.log"
 
 echo "📅 UTC Timestamps generated"
-echo "   From: $hoursBefore"
-echo "   To:   $queryTimeStamp"
+echo "   From: $dateFrom"
+echo "   To:   $dateTo"
 
-create_query_file "$hoursBefore" "$queryTimeStamp"
+create_query_file "$dateFrom" "$dateTo"
 
 # =========================
 #  Run Today's MongoDump
@@ -275,7 +274,7 @@ if mongodump_query "$queryFile" "$dumpFolderPath" "$dumpLogFilePath"; then
     else
         echo "❌ Dump failed for $dumpFolderPath." | tee -a "$dumpLogFilePath"
         re_dump_failed_cron_runs
-        echo "$cronTimeStamp" >> "$failedRunFile"
+        echo "$dateFrom" >> "$failedRunFile"
         # Trim failedRunFile to keep only the last 20 lines if necessary
         line_count=$(wc -l < "$failedRunFile")
         if [ "$line_count" -gt 20 ]; then
@@ -294,4 +293,4 @@ fi
 
 upload_success=$(upload_s3_bucket "$dump_success" "$dumpFolderPath" "$dirTimeStamp")
 
-check_dump_upload_success "$dump_success" "$upload_success" "$dumpLogFilePath" "$cronTimeStamp" "$dirTimeStamp"
+check_dump_upload_success "$dump_success" "$upload_success" "$dumpLogFilePath" "$dirTimeStamp"

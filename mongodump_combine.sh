@@ -80,7 +80,6 @@ mongodump_query() {
 }
 
 upload_s3_bucket() {
-  #  Upload to S3
   local dump_success="$1"
   local dumpFolderPath="$2"
   local dirTimeStamp="$3"
@@ -91,7 +90,7 @@ upload_s3_bucket() {
           echo "✅ Successfully uploaded to $s3Bucket/Microslot/$dirTimeStamp/" >&2
           echo "🧹 Removing local dump directory: $dumpFolderPath" >&2
           rm -rf "$dumpFolderPath"
-          echo true
+          echo true # Function return upload success to variable
       else
           echo "❌ Failed to upload to S3. Keeping local copy at $dumpFolderPath." >&2
       fi
@@ -123,7 +122,7 @@ re_dump_failed_cron_runs() {
   fi
 
   for dateLine in "${validDates[@]}"; do
-      echo "🔍 Processing date: $dateLine"
+      echo "🔍 Processing failed date: $dateLine"
  
       local cronTimeStamp=$(date -u -d "$dateLine")
       local queryTimeStamp=$(date -u -d "$dateLine" +"%Y-%m-%dT%H:%M:00.000Z")
@@ -246,7 +245,7 @@ check_dump_upload_success() {
 }
 
 # =========================
-#  Timestamps (UTC)
+#  Today's Timestamps (UTC)
 # =========================
 cronTimeStamp=$(date -u)
 queryTimeStamp=$(date -u -d "$cronTimeStamp" +"%Y-%m-%dT%H:%M:00.000Z")
@@ -262,7 +261,7 @@ echo "   To:   $queryTimeStamp"
 create_query_file "$hoursBefore" "$queryTimeStamp"
 
 # =========================
-#  Run today's mongodump
+#  Run Today's MongoDump
 # =========================
 dump_success=false
 upload_success=false

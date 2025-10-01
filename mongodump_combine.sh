@@ -127,7 +127,7 @@ re_dump_failed_cron_runs() {
       local failedDate=$(date -u -d "$dateLine")
       local dateFrom=$(date -u -d "$failedDate" +"%Y-%m-%dT00:00:00Z")
       local dateTo=$(date -u -d "$failedDate + 1 day" +"%Y-%m-%dT00:00:00Z")
-      local dirTimeStamp="${dbName}_${dateFrom}"
+      local dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +"%Y-%m-%d_00-00-00")"
   
       echo "📅 UTC Timestamps generated"
       echo "   From: $dateFrom"
@@ -249,7 +249,7 @@ check_dump_upload_success() {
 cronTimeStamp=$(date -u)
 dateFrom=$(date -u -d "$cronTimeStamp - 20 days" +"%Y-%m-%dT00:00:00Z")
 dateTo=$(date -u -d "$cronTimeStamp - 19 days" +"%Y-%m-%dT00:00:00Z")
-dirTimeStamp="${dbName}_${dateFrom}"
+dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +"%Y-%m-%d_00-00-00")"
 dumpFolderPath="$basePath/$dirTimeStamp"
 dumpLogFilePath="$basePath/$dirTimeStamp.log"
 

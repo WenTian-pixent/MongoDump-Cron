@@ -254,12 +254,8 @@ check_dump_upload_success() {
     #  Notify on Success/Failure
     # =========================
     if [ "$dump_success" = true ] && [ "$upload_success" = true ]; then
-        local docCount=$(grep -oP 'done dumping.*\(\K[0-9]+' "$dumpLogFilePath" | tail -1)
-        [ -z "$docCount" ] && docCount="Unknown"
-    
         local successMsg="📦 **Database:** $dbName
     📂 **Collection:** "${collections[@]}"
-    📊 **Documents:** $docCount
     ⏱ **Dump Time (UTC):** $cronTimeStamp
     ☁️ **S3 Path:** $s3Bucket/mgc/$dirTimeStamp/"
     

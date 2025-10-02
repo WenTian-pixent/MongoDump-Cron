@@ -44,6 +44,16 @@ else
 fi
 
 # =========================
+# Collections To Dump
+# =========================
+collections=("game_rounds")
+
+# =========================
+# Keywords Indicating MongoDump Failure
+# =========================
+dumpFailedKeywords="ERROR|Failed|exception|could not|not authorized|authentication failed|connection refused|no such host|timeout|aborting"
+
+# =========================
 #  Paths
 # =========================
 basePath="/data/mgc"
@@ -71,14 +81,15 @@ EOF
 }
 
 mongodump_query() {
-  local queryFile="$1"
-  local dumpFolderPath="$2"
-  local dumpLogFilePath="$3"
+  local collection="$1"
+  local queryFile="$2"
+  local dumpFolderPath="$3"
+  local dumpLogFilePath="$4"
   mongodump --uri="${MONGOURL_ENV}" \
-          --collection=game_rounds \
+          --collection="$collection" \
           --queryFile="$queryFile" \
           --out="$dumpFolderPath" \
-          --verbose 2>&1 | tee "$dumpLogFilePath";
+          --verbose 2>&1 | tee -a "$dumpLogFilePath";
 }
 
 upload_s3_bucket() {
@@ -142,6 +153,9 @@ re_dump_failed_cron_runs() {
       local dumpLogFilePath="$basePath/$dirTimeStamp.log"
       
       mkdir -p "$dumpFolderPath"
+      if [ -f "$dumpLogFilePath" ]; then
+          rm -f "$dumpLogFilePath"
+      fi
 
       echo "📂 Folders created: $dumpFolderPath"
   
@@ -150,23 +164,35 @@ re_dump_failed_cron_runs() {
       local dump_success=false
       local upload_success=false
 
-      if mongodump_query "$queryFile" "$dumpFolderPath" "$dumpLogFilePath"; then
-          if grep -qi "done dumping" "$dumpLogFilePath"; then
-              dump_success=true
-              echo "✅ Dump completed successfully at $dumpFolderPath"
-              # Remove the processed date from the file
-              grep -vxF "$dateLine" "$failedRunFile" > "${failedRunFile}.tmp"
-              if [ ! -s "${failedRunFile}.tmp" ]; then
-                  > "$failedRunFile"
-                  rm "${failedRunFile}.tmp"
-              else
-                  mv "${failedRunFile}.tmp" "$failedRunFile"
-              fi
-          else
-              echo "❌ Dump failed for $dumpFolderPath." | tee -a "$dumpLogFilePath"
+      local pids=()
+
+      for collection in "${collections[@]}"; do
+          # Run mongodump_query in background
+          mongodump_query "$collection" "$queryFile" "$dumpFolderPath" "$dumpLogFilePath" &
+          pids+=($!)
+      done
+      
+      for pid in "${pids[@]}"; do
+          wait "$pid"
+          pidOutput=$?
+          if [ "$pidOutput" -ne 0 ]; then
+            echo "❌ mongodump command failed!" | tee -a "$dumpLogFilePath"
           fi
+      done
+
+      if grep -Eqi "$dumpFailedKeywords" "$dumpLogFilePath"; then
+          echo "❌ Dump failed for $dumpFolderPath." | tee -a "$dumpLogFilePath"
       else
-          echo "❌ mongodump command failed!" | tee -a "$dumpLogFilePath"
+          dump_success=true
+          echo "✅ Dump completed successfully at $dumpFolderPath"
+          # Remove the processed date from the file
+          grep -vxF "$dateLine" "$failedRunFile" > "${failedRunFile}.tmp"
+          if [ ! -s "${failedRunFile}.tmp" ]; then
+              > "$failedRunFile"
+              rm "${failedRunFile}.tmp"
+          else
+              mv "${failedRunFile}.tmp" "$failedRunFile"
+          fi
       fi
 
       upload_success=$(upload_s3_bucket "$dump_success" "$dumpFolderPath" "$dirTimeStamp")
@@ -178,13 +204,13 @@ re_dump_failed_cron_runs() {
 # =========================
 #  Discord Webhooks
 # =========================
-DISCORD_CHANNEL_SUCCESS="https://discord.com/api/webhooks/1414453533733814314/xnOabt6EViC_Kq2j0Cp9CqVELcS-KPEFpKh2dNrjYBRT-L5vV883WsrVqep3iEA9f23U"
-DISCORD_CHANNEL_FAILED="https://discord.com/api/webhooks/1414469964634525747/_1ZE_58m3omLE07WcLuCAP_QkEEx9emgmpsGE6pMaqaV9eUx8GUPiEY_d_8j6mARTGMJ"
+DISCORD_CHANNEL="https://discord.com/api/webhooks/1423200049344549034/F1pdhO2El07djCWhm_hmFt8MpwvxOClH7IDn6V06v3Q5G6aohGe6ZI_nw9_QvfbGES27"
 
 send_discord_notification() {
-    local webhook_url="$1"
-    local status="$2"
-    local message="$3"
+    local status="$1"
+    local message="$2"
+    local dirTimeStamp="$3"
+    local title="${status} - ${dirTimeStamp}"
     local color
 
     case "$status" in
@@ -204,12 +230,12 @@ send_discord_notification() {
         -X POST \
         -d "{
               \"embeds\": [{
-                \"title\": \"$status\",
+                \"title\": \"$title\",
                 \"description\": $json_message,
                 \"color\": $color
               }]
             }" \
-        "$webhook_url")
+        "$DISCORD_CHANNEL")
 
     if [ "$http_code" -ne 204 ]; then
         echo "❌ Failed to send Discord notification (HTTP $http_code)"
@@ -232,19 +258,20 @@ check_dump_upload_success() {
         [ -z "$docCount" ] && docCount="Unknown"
     
         local successMsg="📦 **Database:** $dbName
-    📂 **Collection:** game_rounds
+    📂 **Collection:** "${collections[@]}"
     📊 **Documents:** $docCount
     ⏱ **Dump Time (UTC):** $cronTimeStamp
     ☁️ **S3 Path:** $s3Bucket/mgc/$dirTimeStamp/"
     
-        send_discord_notification "$DISCORD_CHANNEL_SUCCESS" "✅ SUCCESS" "$successMsg"
+        send_discord_notification "✅ SUCCESS" "$successMsg" "$dirTimeStamp"
     else
         local failMsg="📦 **Database:** $dbName
+    📂 **Collection:** "${collections[@]}"
     ⏱ **Dump Time (UTC):** $cronTimeStamp
     ❌ Dump or upload failed.
     📂 Logs: $dumpLogFilePath"
     
-        send_discord_notification "$DISCORD_CHANNEL_FAILED" "❌ FAILED" "$failMsg"
+        send_discord_notification "❌ FAILED" "$failMsg" "$dirTimeStamp"
     fi
 }
 
@@ -263,6 +290,9 @@ echo "   From: $dateFrom"
 echo "   To:   $dateTo"
 
 mkdir -p "$dumpFolderPath"
+if [ -f "$dumpLogFilePath" ]; then
+    rm -f "$dumpLogFilePath"
+fi
 
 create_query_file "$dateFrom" "$dateTo"
 
@@ -272,30 +302,42 @@ create_query_file "$dateFrom" "$dateTo"
 dump_success=false
 upload_success=false
 
+pids=()
+
+for collection in "${collections[@]}"; do
+    # Run mongodump_query in background
+    mongodump_query "$collection" "$queryFile" "$dumpFolderPath" "$dumpLogFilePath" &
+    pids+=($!)
+done
+
+for pid in "${pids[@]}"; do
+    wait "$pid"
+    pidOutput=$?
+    if [ "$pidOutput" -ne 0 ]; then
+      echo "❌ mongodump command failed!" | tee -a "$dumpLogFilePath"
+    fi
+done
+
 echo "🔍 Running mongodump for $dbName.game_rounds ..."
-if mongodump_query "$queryFile" "$dumpFolderPath" "$dumpLogFilePath"; then
-    if grep -qi "done dumping" "$dumpLogFilePath"; then
-        dump_success=true
-        echo "✅ Dump completed successfully at $dumpFolderPath"
-        re_dump_failed_cron_runs
-    else
-        echo "❌ Dump failed for $dumpFolderPath." | tee -a "$dumpLogFilePath"
-        re_dump_failed_cron_runs
-        echo "$dateFrom" >> "$failedRunFile"
-        # Trim failedRunFile to keep only the last 20 lines if necessary
-        line_count=$(wc -l < "$failedRunFile")
-        if [ "$line_count" -gt 20 ]; then
-            # Use a temporary file and check for errors
-            tmp_file="${failedRunFile}.tmp"
-            if tail -n 20 "$failedRunFile" > "$tmp_file"; then
-                mv "$tmp_file" "$failedRunFile"
-            else
-                echo "❌ Error trimming $failedRunFile"
-            fi
+if grep -Eqi "$dumpFailedKeywords" "$dumpLogFilePath"; then
+    echo "❌ Dump failed for $dumpFolderPath." | tee -a "$dumpLogFilePath"
+    re_dump_failed_cron_runs
+    echo "$dateFrom" >> "$failedRunFile"
+    # Trim failedRunFile to keep only the last 20 lines if necessary
+    line_count=$(wc -l < "$failedRunFile")
+    if [ "$line_count" -gt 20 ]; then
+        # Use a temporary file and check for errors
+        tmp_file="${failedRunFile}.tmp"
+        if tail -n 20 "$failedRunFile" > "$tmp_file"; then
+            mv "$tmp_file" "$failedRunFile"
+        else
+            echo "❌ Error trimming $failedRunFile"
         fi
     fi
 else
-    echo "❌ mongodump command failed!" | tee -a "$dumpLogFilePath"
+    dump_success=true
+    echo "✅ Dump completed successfully at $dumpFolderPath"
+    re_dump_failed_cron_runs
 fi
 
 upload_success=$(upload_s3_bucket "$dump_success" "$dumpFolderPath" "$dirTimeStamp")

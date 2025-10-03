@@ -93,9 +93,8 @@ mongodump_query() {
 }
 
 upload_s3_bucket() {
-  local dump_success="$1"
-  local dumpFolderPath="$2"
-  local dirTimeStamp="$3"
+  local dumpFolderPath="$1"
+  local dirTimeStamp="$2"
 
   if [ "$dump_success" = true ]; then
       echo "📤 Uploading dump to $s3Bucket/mgc/$dirTimeStamp/ ..." >&2
@@ -103,7 +102,7 @@ upload_s3_bucket() {
           echo "✅ Successfully uploaded to $s3Bucket/mgc/$dirTimeStamp/" >&2
           echo "🧹 Removing local dump directory: $dumpFolderPath" >&2
           rm -rf "$dumpFolderPath"
-          echo true # Function return upload success to variable
+          upload_success=true
       else
           echo "❌ Failed to upload to S3. Keeping local copy at $dumpFolderPath." >&2
       fi
@@ -139,6 +138,9 @@ re_dump_failed_cron_runs() {
 
   for dateLine in "${validDates[@]}"; do
       echo "🔍 Processing failed date: $dateLine"
+
+      dump_success=false
+      upload_success=false
  
       local failedDate=$(date -u -d "$dateLine")
       local dateFrom=$(date -u -d "$failedDate" +"%Y-%m-%dT00:00:00Z")
@@ -160,9 +162,6 @@ re_dump_failed_cron_runs() {
       echo "📂 Folders created: $dumpFolderPath"
   
       create_query_file "$dateFrom" "$dateTo"
-
-      local dump_success=false
-      local upload_success=false
 
       local pids=()
 
@@ -195,9 +194,9 @@ re_dump_failed_cron_runs() {
           fi
       fi
 
-      upload_success=$(upload_s3_bucket "$dump_success" "$dumpFolderPath" "$dirTimeStamp")
+      upload_s3_bucket "$dumpFolderPath" "$dirTimeStamp"
 
-      check_dump_upload_success "$dump_success" "$upload_success" "$dumpLogFilePath" "$dirTimeStamp"
+      check_dump_upload_success "$dumpLogFilePath" "$dirTimeStamp"
   done
 }
 
@@ -246,10 +245,8 @@ send_discord_notification() {
 }
 
 check_dump_upload_success() {
-    local dump_success="$1"
-    local upload_success="$2"
-    local dumpLogFilePath="$3"
-    local dirTimeStamp="$4"
+    local dumpLogFilePath="$1"
+    local dirTimeStamp="$2"
     # =========================
     #  Notify on Success/Failure
     # =========================
@@ -336,6 +333,6 @@ else
     re_dump_failed_cron_runs
 fi
 
-upload_success=$(upload_s3_bucket "$dump_success" "$dumpFolderPath" "$dirTimeStamp")
+upload_s3_bucket "$dumpFolderPath" "$dirTimeStamp"
 
-check_dump_upload_success "$dump_success" "$upload_success" "$dumpLogFilePath" "$dirTimeStamp"
+check_dump_upload_success "$dumpLogFilePath" "$dirTimeStamp"

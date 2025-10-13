@@ -358,8 +358,8 @@ re_dump_failed_cron_runs() {
 #  Today's Timestamps (UTC)
 # =========================
 cronTimeStamp=$(date -u)
-dateFrom=$(date -u -d "$cronTimeStamp - 20 days" +"%Y-%m-%dT00:00:00Z")
-dateTo=$(date -u -d "$cronTimeStamp - 19 days" +"%Y-%m-%dT00:00:00Z")
+dateFrom=$(date -u -d "$cronTimeStamp - 1 day" +"%Y-%m-%dT00:00:00Z")
+dateTo=$(date -u -d "$cronTimeStamp" +"%Y-%m-%dT00:00:00Z")
 dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +"%Y-%m-%d_00-00-00")"
 dumpFolderPath="$basePath/$dirTimeStamp"
 dumpLogFilePath="$basePath/$dirTimeStamp.log"
@@ -379,6 +379,7 @@ archive_success=false
 upload_success=false
 verify_success=false
 LOCAL_HASH=""
+date_to_failed_run_file=false
 
 pids=()
 for collection in "${collections[@]}"; do
@@ -406,21 +407,26 @@ if [ "$dump_success" = true ]; then
     archive_dump "$dumpFolderPath" "$dirTimeStamp"
     upload_s3_bucket "$dirTimeStamp"
     verify_s3_upload "$dirTimeStamp"
+else
+    date_to_failed_run_file=true
 fi
 
 check_final_status "$dumpLogFilePath" "$dirTimeStamp"
 
 re_dump_failed_cron_runs
 
-echo "$dateFrom" >> "$failedRunFile"
-# Trim failedRunFile to keep only the last 20 lines if necessary
-line_count=$(wc -l < "$failedRunFile")
-if [ "$line_count" -gt 20 ]; then
+if [ "$date_to_failed_run_file" = true ]; then
+    # Append the failed date to the file
+    echo "$dateFrom" >> "$failedRunFile"
+    # Trim failedRunFile to keep only the last 20 lines if necessary
+    line_count=$(wc -l < "$failedRunFile")
+    if [ "$line_count" -gt 20 ]; then
     # Use a temporary file and check for errors
-    tmp_file="${failedRunFile}.tmp"
-    if tail -n 20 "$failedRunFile" > "$tmp_file"; then
-        mv -f "$tmp_file" "$failedRunFile"
-    else
-        echo "❌ Error trimming $failedRunFile"
+        tmp_file="${failedRunFile}.tmp"
+        if tail -n 20 "$failedRunFile" > "$tmp_file"; then
+            mv -f "$tmp_file" "$failedRunFile"
+        else
+            echo "❌ Error trimming $failedRunFile"
+        fi
     fi
 fi

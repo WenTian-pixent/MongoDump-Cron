@@ -58,7 +58,6 @@ dumpFailedKeywords="ERROR|Failed|exception|could not|not authorized|authenticati
 # =========================
 basePath="/data/MGC"
 failedRunFile="$basePath/mongodump-failed-run.txt"
-queryFile="$basePath/query.json"
 s3Bucket="msdev-mongodump"
 
 mkdir -p "$basePath"
@@ -81,6 +80,8 @@ create_query_file() {
   elif [ "$collection" == "user_table_rounds" ]; then
     queryField="updatedAt"
   fi
+
+  queryFile="$basePath/query_$queryField.json"
 
   cat > "$queryFile" <<EOF
 {

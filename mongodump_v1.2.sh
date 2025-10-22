@@ -18,7 +18,7 @@ fi
 #  Validate ENV variables
 # =========================
 missing=false
-for envVar in "MONGOURL_ENV"; do
+for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL" "COLLECTIONS" "DUMP_DAY_OFFSET"; do
   if [ -z "${!envVar:-}" ]; then
     echo "❌ Error: $envVar is not set or is empty."
     missing=true
@@ -44,9 +44,12 @@ else
 fi
 
 # =========================
-# Collections To Dump
+# Initialize Variables
 # =========================
-collections=("bonus_prizes" "game_round_extra_datas" "game_rounds" "player_hour_game_summaries" "player_sessions" "table_rounds" "user_table_rounds" "weekly_settlements")
+collections=($COLLECTIONS)
+dumpDayOffset=$DUMP_DAY_OFFSET
+dateFormat="%Y-%m-%dT00:00:00Z"
+dirDateFormat="%Y-%m-%d_00-00-00"
 
 # =========================
 # Keywords Indicating MongoDump Failure
@@ -203,11 +206,6 @@ verify_s3_upload() {
   fi
 }
 
-# =========================
-#  Discord Webhooks
-# =========================
-DISCORD_CHANNEL="https://discord.com/api/webhooks/1423200049344549034/F1pdhO2El07djCWhm_hmFt8MpwvxOClH7IDn6V06v3Q5G6aohGe6ZI_nw9_QvfbGES27"
-
 send_discord_notification() {
     local status="$1"
     local message="$2"
@@ -247,7 +245,6 @@ check_final_status() {
     local dumpLogFilePath="$1"
     local dirTimeStamp="$2"
     local s3Path="s3://$s3Bucket/MGC/$dirTimeStamp/$dirTimeStamp.tar.gz"
-
     local finalMsg="📌 **Project:** MGC/MAG
 
 📦 **Database:** $dbName
@@ -270,6 +267,42 @@ check_final_status() {
     fi
 }
 
+echo_generated_timeStamps() {
+    local dateFrom="$1"
+    local dateTo="$2"
+    echo "📅 UTC Timestamps generated"
+    echo "   From: $dateFrom"
+    echo "   To:   $dateTo"
+}
+
+make_dir_and_delete_existing_log() {
+    local dumpFolderPath="$1"
+    local dumpLogFilePath="$2"
+    mkdir -p "$dumpFolderPath"
+    [ -f "$dumpLogFilePath" ] && rm -f "$dumpLogFilePath"
+}
+
+append_date_to_failed_run_file() {
+    local dateFromFailedRunFile="$1"
+    local dateFrom="$2"
+
+    if [ "$dateFromFailedRunFile" = true ]; then
+        # Append the failed date to the file
+        echo "$dateFrom" >> "$failedRunFile"
+        # Trim failedRunFile to keep only the last 20 lines if necessary
+        local line_count=$(wc -l < "$failedRunFile")
+        if [ "$line_count" -gt 20 ]; then
+            # Use a temporary file and check for errors
+            local tmp_file="${failedRunFile}.tmp"
+            if tail -n 20 "$failedRunFile" > "$tmp_file"; then
+              mv -f "$tmp_file" "$failedRunFile"
+            else
+              echo "❌ Error trimming $failedRunFile"
+            fi
+        fi
+    fi
+}
+
 re_dump_failed_cron_runs() {
   if [ ! -f "$failedRunFile" ]; then
       return
@@ -286,7 +319,7 @@ re_dump_failed_cron_runs() {
   done
   
   if [ "${#validDates[@]}" -eq 0 ]; then
-      echo "✅ No valid failed dates found. Skipping re_dump_failed_cron_runs."
+      echo "✅ No valid failed dates found. Skipping re-dump process."
       return
   else
       echo "❌ Failed dates found:"
@@ -299,18 +332,15 @@ re_dump_failed_cron_runs() {
       echo "🔍 Processing failed date: $dateLine"
  
       local failedDate=$(date -u -d "$dateLine")
-      local dateFrom=$(date -u -d "$failedDate" +"%Y-%m-%dT00:00:00Z")
-      local dateTo=$(date -u -d "$failedDate + 1 day" +"%Y-%m-%dT00:00:00Z")
-      local dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +"%Y-%m-%d_00-00-00")"
+      local dateFrom=$(date -u -d "$failedDate" +$dateFormat)
+      local dateTo=$(date -u -d "$failedDate + 1 day" +$dateFormat)
+      local dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +$dirDateFormat)"
       local dumpFolderPath="$basePath/$dirTimeStamp"
       local dumpLogFilePath="$basePath/$dirTimeStamp.log"
   
-      echo "📅 UTC Timestamps generated"
-      echo "   From: $dateFrom"
-      echo "   To:   $dateTo"
-
-      mkdir -p "$dumpFolderPath"
-      [ -f "$dumpLogFilePath" ] && rm -f "$dumpLogFilePath"
+      echo_generated_timeStamps "$dateFrom" "$dateTo"
+      
+      make_dir_and_delete_existing_log "$dumpFolderPath" "$dumpLogFilePath"
   
       dump_success=false
       archive_success=false
@@ -366,28 +396,25 @@ dump_dates_from_last_run() {
       echo "❌ Invalid last run date: $dumpLastRun"
       return
   fi
-  local dateToInSec=$(date -u -d "$dateTo" +"%s")
+  local cronTimeInSec=$(date -u -d "$cronTimeStamp" +"%s")
   local dumpLastRunInSec=$(date -u -d "$dumpLastRun" +"%s")
-  local numberOfDays=$(( ($dateToInSec - $dumpLastRunInSec) / 86400 ))
+  local numberOfDays=$(( ($cronTimeInSec - $dumpLastRunInSec) / 86400 ))
 
   if [ $numberOfDays -le 1 ]; then
-      echo "✅ The last dump date is today or in the future. Skipping."
+      echo "✅ The last dump date is today or in the future. Skipping dump from last run."
       return
   fi
 
-  for ((i=numberOfDays; i>=2; i--)); do
-      local dateFrom=$(date -u -d "$i days ago" +"%Y-%m-%dT00:00:00Z")
-      local dateTo=$(date -u -d "$dateFrom + 1 day" +"%Y-%m-%dT00:00:00Z")
-      local dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +"%Y-%m-%d_00-00-00")"
+  for ((i=numberOfDays; i>=1; i--)); do
+      local dateFrom=$(date -u -d "$(($i + $dumpDayOffset)) days ago" +$dateFormat)
+      local dateTo=$(date -u -d "$dateFrom + 1 day" +$dateFormat)
+      local dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +$dirDateFormat)"
       local dumpFolderPath="$basePath/$dirTimeStamp"
       local dumpLogFilePath="$basePath/$dirTimeStamp.log"
 
-      echo "📅 UTC Timestamps generated"
-      echo "   From: $dateFrom"
-      echo "   To:   $dateTo"
+      echo_generated_timeStamps "$dateFrom" "$dateTo"
 
-      mkdir -p "$dumpFolderPath"
-      [ -f "$dumpLogFilePath" ] && rm -f "$dumpLogFilePath"
+      make_dir_and_delete_existing_log "$dumpFolderPath" "$dumpLogFilePath"
 
       dump_success=false
       archive_success=false
@@ -426,57 +453,45 @@ dump_dates_from_last_run() {
 
       check_final_status "$dumpLogFilePath" "$dirTimeStamp"
 
-      if [ "$date_to_failed_run_file" = true ]; then
-          # Append the failed date to the file
-          echo "$dateFrom" >> "$failedRunFile"
-          # Trim failedRunFile to keep only the last 20 lines if necessary
-          line_count=$(wc -l < "$failedRunFile")
-          if [ "$line_count" -gt 20 ]; then
-              # Use a temporary file and check for errors
-              tmp_file="${failedRunFile}.tmp"
-              if tail -n 20 "$failedRunFile" > "$tmp_file"; then
-                mv -f "$tmp_file" "$failedRunFile"
-              else
-                echo "❌ Error trimming $failedRunFile"
-              fi
-          fi
-      fi
+      append_date_to_failed_run_file "$date_to_failed_run_file" "$dateFrom"
   done
 }
 
 # =========================
 #  Initialize Timestamps (UTC)
 # =========================
-justDumpDateArgs=false
 cronTimeStamp=$(date -u)
+dateFrom=$(date -u -d "$cronTimeStamp - $dumpDayOffset days" +$dateFormat)
+dateTo=$(date -u -d "$dateFrom + 1 day" +$dateFormat)
 
 # If passed date argument, only execute dumping for that date, skip all other instructions
-if [ -n "$1" ] && ! date -d "$1" >/dev/null 2>&1; then
-    echo "❌ Argument is an invalid date. Exiting script."
-    exit 0
-else
-    read -p "Dump the following date: $(date -u -d "$1" +"%Y-%m-%dT00:00:00Z") y/n:- " choice
-    if [ "$choice" = "y" ]; then 
-        justDumpDateArgs=true
-        cronTimeStamp=$(date -u -d "$1 + 1 day")
-    else
-        echo "Exiting script."
+skipOtherInstructions=false
+argumentDate="${1:-}"
+if [ -n "$argumentDate" ]; then
+    if ! date -d "$argumentDate" >/dev/null 2>&1; then
+        echo "❌ Argument is an invalid date. Exiting script."
         exit 0
+    else
+        read -p "Dump the following date: $(date -u -d "$argumentDate" +$dateFormat) y/n:- " choice
+        if [ "$choice" = "y" ]; then 
+            skipOtherInstructions=true
+            cronTimeStamp=$(date -u -d "$argumentDate")
+            dateFrom=$(date -u -d "$cronTimeStamp" +$dateFormat)
+            dateTo=$(date -u -d "$cronTimeStamp + 1 day" +$dateFormat)
+        else
+            echo "Exiting script."
+            exit 0
+        fi
     fi
 fi
 
-dateFrom=$(date -u -d "$cronTimeStamp - 1 day" +"%Y-%m-%dT00:00:00Z")
-dateTo=$(date -u -d "$cronTimeStamp" +"%Y-%m-%dT00:00:00Z")
-dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +"%Y-%m-%d_00-00-00")"
+dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +$dirDateFormat)"
 dumpFolderPath="$basePath/$dirTimeStamp"
 dumpLogFilePath="$basePath/$dirTimeStamp.log"
 
-echo "📅 UTC Timestamps generated"
-echo "   From: $dateFrom"
-echo "   To:   $dateTo"
+echo_generated_timeStamps "$dateFrom" "$dateTo"
 
-mkdir -p "$dumpFolderPath"
-[ -f "$dumpLogFilePath" ] && rm -f "$dumpLogFilePath"
+make_dir_and_delete_existing_log "$dumpFolderPath" "$dumpLogFilePath"
 
 # =========================
 #  Run MongoDump
@@ -520,32 +535,18 @@ fi
 
 check_final_status "$dumpLogFilePath" "$dirTimeStamp"
 
-if [ "$justDumpDateArgs" = true ]; then
+if [ "$skipOtherInstructions" = true ]; then
     # If only dumping for the passed date argument, exit here
     exit 0
 fi
 
 re_dump_failed_cron_runs
 
-if [ "$date_to_failed_run_file" = true ]; then
-    # Append the failed date to the file
-    echo "$dateFrom" >> "$failedRunFile"
-    # Trim failedRunFile to keep only the last 20 lines if necessary
-    line_count=$(wc -l < "$failedRunFile")
-    if [ "$line_count" -gt 20 ]; then
-    # Use a temporary file and check for errors
-        tmp_file="${failedRunFile}.tmp"
-        if tail -n 20 "$failedRunFile" > "$tmp_file"; then
-            mv -f "$tmp_file" "$failedRunFile"
-        else
-            echo "❌ Error trimming $failedRunFile"
-        fi
-    fi
-fi
+append_date_to_failed_run_file "$date_to_failed_run_file" "$dateFrom"
 
 dump_dates_from_last_run
 
 # =========================
 #  Log Executed Dump Date
 # =========================
-echo $dateTo > "$lastRunFile"
+echo $(date -u -d "$cronTimeStamp" +$dateFormat) > "$lastRunFile"

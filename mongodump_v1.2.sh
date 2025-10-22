@@ -445,9 +445,26 @@ dump_dates_from_last_run() {
 }
 
 # =========================
-#  Today's Timestamps (UTC)
+#  Initialize Timestamps (UTC)
 # =========================
+justDumpDateArgs=false
 cronTimeStamp=$(date -u)
+
+# If passed date argument, only execute dumping for that date, skip all other instructions
+if [ -n "$1" ] && ! date -d "$1" >/dev/null 2>&1; then
+    echo "❌ Argument is an invalid date. Exiting script."
+    exit 0
+else
+    read -p "Dump the following date: $(date -u -d "$1" +"%Y-%m-%dT00:00:00Z") y/n:- " choice
+    if [ "$choice" = "y" ]; then 
+        justDumpDateArgs=true
+        cronTimeStamp=$(date -u -d "$1 + 1 day")
+    else
+        echo "Exiting script."
+        exit 0
+    fi
+fi
+
 dateFrom=$(date -u -d "$cronTimeStamp - 1 day" +"%Y-%m-%dT00:00:00Z")
 dateTo=$(date -u -d "$cronTimeStamp" +"%Y-%m-%dT00:00:00Z")
 dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +"%Y-%m-%d_00-00-00")"
@@ -502,6 +519,11 @@ else
 fi
 
 check_final_status "$dumpLogFilePath" "$dirTimeStamp"
+
+if [ "$justDumpDateArgs" = true ]; then
+    # If only dumping for the passed date argument, exit here
+    exit 0
+fi
 
 re_dump_failed_cron_runs
 

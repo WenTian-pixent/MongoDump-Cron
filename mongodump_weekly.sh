@@ -18,7 +18,7 @@ fi
 #  Validate ENV variables
 # =========================
 missing=false
-for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL" "COLLECTIONS" "DUMP_DAY_OFFSET"; do
+for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL" "COLLECTIONS" "DUMP_DAY_OFFSET" "DUMP_DAY_RANGE"; do
   if [ -z "${!envVar:-}" ]; then
     echo "❌ Error: $envVar is not set or is empty."
     missing=true
@@ -48,6 +48,7 @@ fi
 # =========================
 collections=($COLLECTIONS)
 dumpDayOffset=$DUMP_DAY_OFFSET
+dumpDayRange=$DUMP_DAY_RANGE
 dateFormat="%Y-%m-%dT00:00:00Z"
 dirDateFormat="%Y-%m-%d_00-00-00"
 
@@ -333,7 +334,7 @@ re_dump_failed_cron_runs() {
  
       local failedDate=$(date -u -d "$dateLine")
       local dateFrom=$(date -u -d "$failedDate" +$dateFormat)
-      local dateTo=$(date -u -d "$failedDate + 1 day" +$dateFormat)
+      local dateTo=$(date -u -d "$failedDate + $dumpDayRange days" +$dateFormat)
       local dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +$dirDateFormat)"
       local dumpFolderPath="$basePath/$dirTimeStamp"
       local dumpLogFilePath="$basePath/$dirTimeStamp.log"
@@ -399,15 +400,20 @@ dump_dates_from_last_run() {
   local cronTimeInSec=$(date -u -d "$cronTimeStamp" +"%s")
   local dumpLastRunInSec=$(date -u -d "$dumpLastRun" +"%s")
   local numberOfDays=$(( ($cronTimeInSec - $dumpLastRunInSec) / 86400 ))
+  local numberOfWeeks=$((numberOfDays / 7))
+  local loopStopPoint=0
 
-  if [ $numberOfDays -le 1 ]; then
-      echo "✅ The last dump date is today or in the future. Skipping dump from last run."
+  if [ "$dumpDayRange" -gt 0 ]; then
+      loopStopPoint=$(($dumpDayOffset / $dumpDayRange)) 
+  fi
+  if [ $numberOfDays -le $dumpDayOffset ]; then
+      echo "✅ The last dump date is equal to dump day offset or in the future. Skipping dump from last run."
       return
   fi
 
-  for ((i=numberOfDays; i>=1; i--)); do
-      local dateFrom=$(date -u -d "$(($i + $dumpDayOffset)) days ago" +$dateFormat)
-      local dateTo=$(date -u -d "$dateFrom + 1 day" +$dateFormat)
+  for ((i=numberOfWeeks; i>$loopStopPoint; i--)); do
+      local dateFrom=$(date -u -d "$(($i * $dumpDayRange)) days ago" +$dateFormat)
+      local dateTo=$(date -u -d "$dateFrom + $dumpDayRange days" +$dateFormat)
       local dirTimeStamp="${dbName}_$(date -u -d "$dateFrom" +$dirDateFormat)"
       local dumpFolderPath="$basePath/$dirTimeStamp"
       local dumpLogFilePath="$basePath/$dirTimeStamp.log"
@@ -462,7 +468,7 @@ dump_dates_from_last_run() {
 # =========================
 cronTimeStamp=$(date -u)
 dateFrom=$(date -u -d "$cronTimeStamp - $dumpDayOffset days" +$dateFormat)
-dateTo=$(date -u -d "$dateFrom + 1 day" +$dateFormat)
+dateTo=$(date -u -d "$dateFrom + $dumpDayRange days" +$dateFormat)
 
 # If passed date argument, only execute dumping for that date, skip all other instructions
 skipOtherInstructions=false
@@ -477,7 +483,7 @@ if [ -n "$argumentDate" ]; then
             skipOtherInstructions=true
             cronTimeStamp=$(date -u -d "$argumentDate")
             dateFrom=$(date -u -d "$cronTimeStamp" +$dateFormat)
-            dateTo=$(date -u -d "$cronTimeStamp + 1 day" +$dateFormat)
+            dateTo=$(date -u -d "$cronTimeStamp + $dumpDayRange days" +$dateFormat)
         else
             echo "Exiting script."
             exit 0

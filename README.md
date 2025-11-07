@@ -34,3 +34,9 @@ Before using this project, ensure you have the following installed:
 ## Notes
 - Make sure your scripts have execute permissions (`chmod +x script.sh`).
 - Review and adjust the scripts for your specific MongoDB URI, database, and collection names.
+
+## Changelog
+- v1: Initial release to dump "game_rounds" collection daily
+- v1.1: Able to dump multiple collections with different query fields & re-dump failed cron runs
+- v1.2: Move variables to environment file, add dump dates from last cron run logic, allow pass argument to dump specific date, put duplicate code in function
+- v1.3: Change dump logic from daily to a week worth of data per weekly dump

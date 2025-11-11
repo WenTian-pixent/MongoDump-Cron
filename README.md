@@ -25,10 +25,8 @@ Before using this project, ensure you have the following installed:
 
 ## Setup Instructions
 1. Clone the repository and navigate to the project folder.
-2. Enter following credentials to ~/.bashrc:
-    - MongoDB database URL
-    - Discord Channel ID
-3. Ensure MongoDB and `mongodump` are installed and accessible in your environment.
+2. Create environment file with variables (environment file path is located in script).
+3. Ensure prerequisites are installed and accessible in your environment.
 4. Set up your cron jobs to execute the shell scripts as needed.
 
 ## Environment Variables
@@ -42,21 +40,70 @@ DUMP_DAY_OFFSET=21
 DUMP_DAY_RANGE=7
 ```
 
+## Cron Instruction
+```crontab
+0 21 * * 0 {path to script}
+```
+Execute script every Monday 5:00am (+08 Malaysia Time). 
+
 ## Usage
 ```bash
-bash mongodump_weekly.sh [YYYY-MM-DD or ISO date]
+bash mongodump.sh [YYYY-MM-DD or ISO date]
 ```
 - **No argument:** Dumps for the current week and handles failed runs.
 - **With date argument:** Dumps only for the specified date.
-- Use the provided shell scripts to automate MongoDB dumps and notifications.
-- Check the output logs and Discord channels for dump status updates.
+- The script sets the time portion of the dates to 00:00:00.
+- Use the provided shell script to automate MongoDB dumps and notifications.
+- Check the output logs and Discord channel for dump status updates.
+
+## Examples
+### Dump 7 days of data
+```env_bash
+# Current date time is 2025-11-10T21:00:00Z
+DUMP_DAY_RANGE=7
+bash mongodump.sh
+```
+- Date From: 2025-11-10T00:00:00Z
+- Date To: 2025-11-17T00:00:00Z
+
+### Dump specific date
+```env_bash
+DUMP_DAY_RANGE=1
+bash mongodump.sh "2025-11-01"
+```
+- Date From: 2025-11-01T00:00:00Z
+- Date To: 2025-11-02T00:00:00Z
+
+### Dump with offset
+```env_bash
+# Current date time is 2025-11-24T21:00:00Z
+DUMP_DAY_OFFSET=21
+DUMP_DAY_RANGE=7
+bash mongodump.sh
+```
+- Date From: 2025-11-03T00:00:00Z
+- Date To: 2025-11-10T00:00:00Z
 
 ## Notes
 - Make sure your scripts have execute permissions (`chmod +x script.sh`).
 - Review and adjust the scripts for your specific MongoDB URI, database, and collection names.
+- DUMP_DAY_OFFSET doesn't take effect if specify date to dump.
 
 ## Changelog
 - v1: Initial release to dump "game_rounds" collection daily
 - v1.1: Able to dump multiple collections with different query fields & re-dump failed cron runs
 - v1.2: Move variables to environment file, add dump dates from last cron run logic, allow pass argument to dump specific date, put duplicate code in function
 - v1.3: Change dump logic from daily to a week worth of data per weekly dump, add new env variable DUMP_DAY_RANGE
+
+## Appendix
+- **Script Functions:** 
+  - `create_query_file`: Generates query for each collection.
+  - `mongodump_query`: Runs mongodump for each collection in parallel.
+  - `archive_dump`: Archives dump folder and generates SHA256.
+  - `upload_s3_bucket`: Uploads archive and checksum to S3.
+  - `verify_s3_upload`: Verifies S3 upload and checksum.
+  - `send_discord_notification`: Sends status to Discord.
+  - `check_final_status`: Summarizes and sends final status.
+  - `re_dump_failed_cron_runs`: Retries failed dumps.
+  - `dump_dates_from_last_run`: Run dump starting from the last cron run (incase of server inactivity).
+  - `append_date_to_failed_run_file`: Store failed date to file for redump on the next script run.

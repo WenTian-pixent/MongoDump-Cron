@@ -18,7 +18,7 @@ fi
 #  Validate ENV variables
 # =========================
 missing=false
-for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL" "COLLECTIONS" "DUMP_DAY_OFFSET" "DUMP_DAY_RANGE"; do
+for envVar in "MONGOURL_ENV" "DISCORD_CHANNEL" "COLLECTIONS" "COLLECTIONS_QUERY" "DUMP_DAY_OFFSET" "DUMP_DAY_RANGE"; do
   if [ -z "${!envVar:-}" ]; then
     echo "❌ Error: $envVar is not set or is empty."
     missing=true
@@ -47,10 +47,16 @@ fi
 # Initialize Variables
 # =========================
 collections=($COLLECTIONS)
+collectionsQuery=($COLLECTIONS_QUERY)
 dumpDayOffset=$DUMP_DAY_OFFSET
 dumpDayRange=$DUMP_DAY_RANGE
 dateFormat="%Y-%m-%dT00:00:00Z"
 dirDateFormat="%Y-%m-%d_00-00-00"
+
+if [ "${#collections[@]}" -ne "${#collectionsQuery[@]}" ]; then
+    echo "❌ Error: COLLECTIONS and COLLECTIONS_QUERY array have different lengths."
+    exit 1
+fi
 
 # =========================
 # Keywords Indicating MongoDump Failure
@@ -71,20 +77,10 @@ mkdir -p "$basePath"
 # Initialize functions
 # =========================
 create_query_file() {
-  local collection="$1"
+  local collection="${collections[$1]}"
+  local queryField="${collectionsQuery[$1]}"
   local dateFrom="$2"
   local dateTo="$3"
-  local queryField="endTime"
-  
-  if [[ "$collection" == "player_hour_game_summaries" || "$collection" == "weekly_settlements" ]]; then
-    queryField="date"
-  elif [ "$collection" == "player_sessions" ]; then
-    queryField="lastBetDate"
-  elif [ "$collection" == "bonus_prizes" ]; then
-    queryField="createdAt"
-  elif [ "$collection" == "user_table_rounds" ]; then
-    queryField="updatedAt"
-  fi
 
   queryFile="$basePath/query_$queryField.json"
 
@@ -99,7 +95,7 @@ EOF
 }
 
 mongodump_query() {
-  local collection="$1"
+  local collection="${collections[$1]}"
   local queryFile="$2"
   local dumpFolderPath="$3"
   local dumpLogFilePath="$4"
@@ -137,11 +133,11 @@ archive_dump() {
       LOCAL_HASH=$(cat "$shaFilePath")
 
       archive_success=true
-      rm -rf "$dumpFolderPath"
   else
       echo "❌ Failed to create archive."
       archive_success=false
   fi
+  rm -rf "$dumpFolderPath"
 }
 
 upload_s3_bucket() {
@@ -157,7 +153,6 @@ upload_s3_bucket() {
              aws s3 cp "$checksumFile" "s3://$s3Bucket/$s3Prefix"; then
               echo "✅ Successfully uploaded $tarFilePath and checksum"
               upload_success=true
-              rm -f "$tarFilePath" "$checksumFile"   # remove after saving LOCAL_HASH
               return
           else
               echo "⚠️ Upload attempt $attempt failed. Retrying in 5s..."
@@ -170,6 +165,7 @@ upload_s3_bucket() {
       echo "❌ Skipping upload since dump or archive failed."
       upload_success=false
   fi
+  rm -f "$tarFilePath" "$checksumFile"
 }
 
 verify_s3_upload() {
@@ -351,9 +347,9 @@ re_dump_failed_cron_runs() {
 
       local pids=()
 
-      for collection in "${collections[@]}"; do
-          create_query_file "$collection" "$dateFrom" "$dateTo"
-          mongodump_query "$collection" "$queryFile" "$dumpFolderPath" "$dumpLogFilePath" &
+      for collectionIndex in "${!collections[@]}"; do
+          create_query_file "$collectionIndex" "$dateFrom" "$dateTo"
+          mongodump_query "$collectionIndex" "$queryFile" "$dumpFolderPath" "$dumpLogFilePath" &
           pids+=($!)
       done
       
@@ -431,9 +427,9 @@ dump_dates_from_last_run() {
       local date_to_failed_run_file=false
       local pids=()
 
-      for collection in "${collections[@]}"; do
-          create_query_file "$collection" "$dateFrom" "$dateTo"
-          mongodump_query "$collection" "$queryFile" "$dumpFolderPath" "$dumpLogFilePath" &
+      for collectionIndex in "${!collections[@]}"; do
+          create_query_file "$collectionIndex" "$dateFrom" "$dateTo"
+          mongodump_query "$collectionIndex" "$queryFile" "$dumpFolderPath" "$dumpLogFilePath" &
           pids+=($!)
       done
 
@@ -510,9 +506,9 @@ LOCAL_HASH=""
 date_to_failed_run_file=false
 
 pids=()
-for collection in "${collections[@]}"; do
-    create_query_file "$collection" "$dateFrom" "$dateTo"
-    mongodump_query "$collection" "$queryFile" "$dumpFolderPath" "$dumpLogFilePath" &
+for collectionIndex in "${!collections[@]}"; do
+    create_query_file "$collectionIndex" "$dateFrom" "$dateTo"
+    mongodump_query "$collectionIndex" "$queryFile" "$dumpFolderPath" "$dumpLogFilePath" &
     pids+=($!)
 done
 
